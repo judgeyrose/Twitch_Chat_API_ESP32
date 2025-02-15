@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
+#include <WiFiManager.h> // Include WiFiManager library
 #include "LEDAnimations.h"
 #include "config.h"
 
@@ -15,7 +16,7 @@ const char twitch_oauth_token[] = TWITCH_OAUTH_TOKEN;
 const char twitch_nick[] = TWITCH_NICK;
 const char twitch_channel[] = TWITCH_CHANNEL;
 
-#define LED_PIN 48
+#define LED_PIN 5 // Update to a valid GPIO pin
 #define NUM_LEDS 1
 
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -23,6 +24,7 @@ LEDAnimations ledAnimations(strip);
 
 unsigned long lastWiFiCheckTime = 0;
 const unsigned long wifiCheckInterval = 1000; // 1 minute
+const unsigned long wifiReconnectInterval = 60000; // 1 minute
 
 TaskHandle_t ledTaskHandle = NULL;
 
@@ -99,7 +101,6 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
   }
 }
 
-
 void ledTask(void *parameter) {
   while (true) {
     ledAnimations.update();
@@ -110,15 +111,10 @@ void ledTask(void *parameter) {
 void setup() {
   Serial.begin(115200);
 
-  // Connect to WiFi
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  unsigned long startAttemptTime = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < wifiCheckInterval) {
-    Serial.print(".");
-    delay(100);
-  }
-
+  // Initialize WiFiManager
+  WiFiManager wifiManager;
+  wifiManager.autoConnect("ESP32_AP"); // Create an access point with the name "ESP32_AP"
+ 
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Failed to connect to WiFi, resetting ESP32...");
     ESP.restart();
@@ -156,4 +152,14 @@ void setup() {
 
 void loop() {
   webSocket.loop();
+
+  // Check WiFi connection status periodically
+  if (millis() - lastWiFiCheckTime >= wifiReconnectInterval) {
+    lastWiFiCheckTime = millis();
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi disconnected, starting WiFiManager...");
+      WiFiManager wifiManager;
+      wifiManager.startConfigPortal("ESP32_AP"); // Start configuration portal
+    }
+  }
 }
